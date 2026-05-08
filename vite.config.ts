@@ -11,16 +11,6 @@ export default defineConfig({
       sourcemap: false,
 
       chunkSizeWarningLimit: 3000,
-
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            vendor: ["react", "react-dom"],
-            animations: ["framer-motion", "gsap"],
-            three: ["three"],
-          },
-        },
-      },
     },
 
     optimizeDeps: {
