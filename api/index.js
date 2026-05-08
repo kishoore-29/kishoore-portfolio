@@ -1,59 +1,63 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Dynamic import for the server handler
-async function getServerHandler() {
-  const serverPath = path.join(__dirname, '../dist/server/index.js');
-  const handler = await import(serverPath);
-  return handler.default;
-}
-
-let serverHandler;
-
 export default async function handler(req, res) {
   try {
-    // Load server handler on first request
-    if (!serverHandler) {
-      serverHandler = await getServerHandler();
+    console.log(`[API] ${req.method} ${req.url}`);
+    
+    // Import the server handler
+    const { default: serverHandler } = await import('../dist/server/index.js');
+    
+    if (!serverHandler || typeof serverHandler.fetch !== 'function') {
+      console.error('[API] Server handler missing or invalid');
+      throw new Error('Server handler does not export a fetch function');
     }
 
-    // Construct URL
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const url = new URL(req.url, `${protocol}://${host}`);
+    // Build the URL - ensure protocol and host are correct
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+    const url = `${protocol}://${host}${req.url}`;
+    
+    console.log(`[API] Constructed URL: ${url}`);
 
-    // Convert Node.js request to Fetch API Request
-    let body;
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-      body = JSON.stringify(req.body);
+    // Prepare request body
+    let body = undefined;
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+      if (req.body) {
+        body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      }
     }
 
+    // Create a Fetch API Request
     const fetchRequest = new Request(url, {
       method: req.method,
-      headers: req.headers,
+      headers: new Headers(req.headers),
       body,
     });
 
-    // Call Cloudflare Worker handler and convert response
-    const response = await serverHandler.fetch(fetchRequest, {}, {});
+    // Call the server handler
+    console.log('[API] Calling server handler...');
+    const fetchResponse = await serverHandler.fetch(fetchRequest, {}, {});
 
-    // Set response status and headers
-    res.statusCode = response.status;
-    response.headers.forEach((value, key) => {
+    console.log(`[API] Server returned status: ${fetchResponse.status}`);
+
+    // Set status code
+    res.statusCode = fetchResponse.status;
+
+    // Copy response headers
+    for (const [key, value] of fetchResponse.headers.entries()) {
       res.setHeader(key, value);
-    });
+    }
 
-    // Stream response body
-    const responseText = await response.text();
-    res.end(responseText);
+    // Send response body
+    const responseBody = await fetchResponse.text();
+    console.log(`[API] Response body length: ${responseBody.length}`);
+    res.end(responseBody);
   } catch (error) {
-    console.error('Server handler error:', error);
+    console.error('[API] Error:', error);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Internal Server Error', message: error.message }));
+    res.end(JSON.stringify({
+      error: 'Internal Server Error',
+      message: error.message,
+      stack: process.env.DEBUG ? error.stack : undefined,
+    }));
   }
 }

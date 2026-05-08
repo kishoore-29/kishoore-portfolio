@@ -4,10 +4,26 @@
   "env": {
     "NODE_ENV": "production"
   },
+  "public": "dist/client",
   "rewrites": [
+    {
+      "source": "/assets/:path*",
+      "destination": "/assets/:path*"
+    },
     {
       "source": "/:path*",
       "destination": "/api"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ]
 }
