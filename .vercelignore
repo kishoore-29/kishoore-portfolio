@@ -1,7 +1,4 @@
 wrangler.jsonc
 .wrangler
 bun.lock
-.tanstack
 .git
-node_modules
-src
